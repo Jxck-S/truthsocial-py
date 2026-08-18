@@ -9,11 +9,12 @@ from uuid import UUID
 
 import httpx
 
-from truthpy import (
+from truthsocial_py import (
     APIError,
     AuthenticationError,
     ConfigurationError,
     CredentialDiscoveryError,
+    DEFAULT_USER_AGENT,
     NetworkError,
     NotAuthenticatedError,
     ProtocolError,
@@ -59,7 +60,7 @@ class TruthSocialClientTests(unittest.TestCase):
                 request.headers["x-truth-session-id"],
                 "session-id",
             )
-            self.assertTrue(request.headers["user-agent"].startswith("truthpy/"))
+            self.assertTrue(request.headers["user-agent"].startswith("truthsocial-py/"))
             self.assertEqual(
                 json.loads(request.content),
                 {
@@ -116,6 +117,48 @@ class TruthSocialClientTests(unittest.TestCase):
         client = self.make_client(handler, access_token="access-token")
         UUID(client.truth_session_id)
         client.verify_credentials()
+
+    def test_user_agent_defaults_and_can_be_overridden(self):
+        seen: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers["user-agent"])
+            return httpx.Response(
+                200,
+                json={
+                    "id": "42",
+                    "username": "alice",
+                    "acct": "alice",
+                    "display_name": "Alice",
+                },
+            )
+
+        default_client = self.make_client(handler, access_token="token")
+        self.assertEqual(default_client.user_agent, DEFAULT_USER_AGENT)
+        default_client.verify_credentials()
+
+        custom_client = self.make_client(
+            handler,
+            access_token="token",
+            user_agent="my-bot/2.0 (+https://example.invalid)",
+        )
+        self.assertEqual(
+            custom_client.user_agent,
+            "my-bot/2.0 (+https://example.invalid)",
+        )
+        custom_client.verify_credentials()
+
+        self.assertEqual(
+            seen,
+            [DEFAULT_USER_AGENT, "my-bot/2.0 (+https://example.invalid)"],
+        )
+        self.assertTrue(DEFAULT_USER_AGENT.startswith("truthsocial-py/"))
+
+    def test_invalid_user_agent_is_rejected(self):
+        for value in ("", " leading", "bad\r\nInjected: 1", 123):
+            with self.subTest(value=value):
+                with self.assertRaises(ConfigurationError):
+                    TruthSocialClient(user_agent=value)
 
     def test_discovers_web_credentials_from_same_origin_bundle(self):
         requested_urls = []

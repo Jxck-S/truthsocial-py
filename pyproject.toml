@@ -1,17 +1,22 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "truthpy"
-version = "0.1.0"
+name = "truthsocial-py"
+dynamic = ["version"]
 description = "An unofficial typed Python client for Truth Social"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Jack Sweeney", email = "jackhsweeney1@gmail.com" },
+]
 dependencies = [
     "httpx>=0.27,<1",
 ]
-keywords = ["truth-social", "api", "client"]
+keywords = ["truth-social", "truthsocial", "api", "client", "mastodon"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -21,16 +26,21 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Internet",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
 
 [project.urls]
-Homepage = "https://github.com/Jxck-S/truthpy"
-Repository = "https://github.com/Jxck-S/truthpy"
-Issues = "https://github.com/Jxck-S/truthpy/issues"
+Homepage = "https://github.com/Jxck-S/truthsocial-py"
+Repository = "https://github.com/Jxck-S/truthsocial-py"
+Issues = "https://github.com/Jxck-S/truthsocial-py/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "truthsocial_py._version.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-truthpy = ["py.typed"]
+truthsocial_py = ["py.typed"]

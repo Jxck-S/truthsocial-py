@@ -38,6 +38,7 @@ from .models import (
 DEFAULT_BASE_URL = "https://truthsocial.com"
 DEFAULT_SCOPE = "read write follow push"
 OOB_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
+DEFAULT_USER_AGENT = f"truthsocial-py/{__version__}"
 MediaSource: TypeAlias = str | PathLike[str] | BinaryIO
 
 _MAX_DISCOVERY_HTML_BYTES = 1_000_000
@@ -80,6 +81,16 @@ class _ScriptSourceParser(HTMLParser):
             self.sources.append(source)
 
 
+def _is_header_safe(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value == value.strip()
+        and "\r" not in value
+        and "\n" not in value
+    )
+
+
 def _normalize_base_url(base_url: str) -> str:
     parsed_base_url = httpx.URL(base_url)
     if (
@@ -107,19 +118,20 @@ class TruthSocialClient:
         timeout: float | httpx.Timeout | None = 20.0,
         transport: httpx.BaseTransport | None = None,
         truth_session_id: str | None = None,
+        user_agent: str | None = None,
     ) -> None:
         session_id = (
             str(uuid4()) if truth_session_id is None else truth_session_id
         )
-        if (
-            not isinstance(session_id, str)
-            or not session_id
-            or session_id != session_id.strip()
-            or "\r" in session_id
-            or "\n" in session_id
-        ):
+        if not _is_header_safe(session_id):
             raise ConfigurationError(
                 "truth_session_id must be a non-empty header-safe string"
+            )
+
+        agent = DEFAULT_USER_AGENT if user_agent is None else user_agent
+        if not _is_header_safe(agent):
+            raise ConfigurationError(
+                "user_agent must be a non-empty header-safe string"
             )
 
         self._base_url = _normalize_base_url(base_url)
@@ -127,6 +139,7 @@ class TruthSocialClient:
         self._client_secret = client_secret
         self._access_token: str | None = None
         self._truth_session_id = session_id
+        self._user_agent = agent
         self._closed = False
         self._http = httpx.Client(
             timeout=timeout,
@@ -134,7 +147,7 @@ class TruthSocialClient:
             follow_redirects=False,
             headers={
                 "Accept": "application/json",
-                "User-Agent": f"truthpy/{__version__}",
+                "User-Agent": agent,
                 "X-Truth-Session-Id": session_id,
             },
         )
@@ -153,6 +166,10 @@ class TruthSocialClient:
     @property
     def truth_session_id(self) -> str:
         return self._truth_session_id
+
+    @property
+    def user_agent(self) -> str:
+        return self._user_agent
 
     @property
     def is_authenticated(self) -> bool:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 class TruthSocialError(Exception):
-    """Base exception for all truthpy errors."""
+    """Base exception for all truthsocial-py errors."""
 
 
 class ConfigurationError(TruthSocialError):

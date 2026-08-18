@@ -5,7 +5,7 @@ import unittest
 
 import httpx
 
-from truthpy import (
+from truthsocial_py import (
     AuthenticationError,
     ConfigurationError,
     TruthSocialApp,
@@ -289,6 +289,37 @@ class TruthSocialAppTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ConfigurationError, "BaseTransport"):
             app.new_client()
+
+    def test_user_agent_override_reaches_clients(self):
+        seen: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen.append(request.headers["user-agent"])
+            return httpx.Response(
+                200,
+                json={"access_token": "token", "token_type": "Bearer"},
+            )
+
+        app = TruthSocialApp(
+            client_id="manual-client-id",
+            client_secret="manual-client-secret",
+            transport_factory=lambda: httpx.MockTransport(handler),
+            user_agent="my-bot/2.0",
+        )
+        self.assertEqual(app.user_agent, "my-bot/2.0")
+        client = app.login("alice", "alice-password")
+        self.addCleanup(client.close)
+
+        self.assertEqual(client.user_agent, "my-bot/2.0")
+        self.assertEqual(seen, ["my-bot/2.0"])
+
+    def test_invalid_user_agent_is_rejected(self):
+        with self.assertRaises(ConfigurationError):
+            TruthSocialApp(
+                client_id="manual-client-id",
+                client_secret="manual-client-secret",
+                user_agent="bad\r\nInjected: 1",
+            )
 
 
 if __name__ == "__main__":

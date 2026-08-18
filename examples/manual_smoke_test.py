@@ -9,9 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from local_credentials import PASSWORD, USERNAME
-from truthpy import Status, TruthSocialApp, TruthSocialError
+from truthsocial_py import Status, TruthSocialApp, TruthSocialError
 
-IMAGE_PATH = Path(__file__).with_name("truthpy-test.png")
+IMAGE_PATH = Path(__file__).with_name("truthsocial-py-test.png")
 
 # Truth Social currently accepts public visibility for these posting calls.
 VISIBILITY = "public"
@@ -76,25 +76,25 @@ def main() -> int:
             print(f"Authenticated as @{account.acct}")
 
             text_post = client.post_status(
-                f"truthpy live test {run_id}: text post",
+                f"truthsocial-py live test {run_id}: text post",
                 visibility=VISIBILITY,
-                idempotency_key=f"truthpy-{run_id}-text",
+                idempotency_key=f"truthsocial-py-{run_id}-text",
             )
             print_status("Text post", text_post)
 
             reply = client.reply(
                 text_post,
-                f"truthpy live test {run_id}: reply",
+                f"truthsocial-py live test {run_id}: reply",
                 visibility=VISIBILITY,
-                idempotency_key=f"truthpy-{run_id}-reply",
+                idempotency_key=f"truthsocial-py-{run_id}-reply",
             )
             print_status("Reply", reply)
 
             image_post = client.post_status(
-                f"truthpy live test {run_id}: image post",
+                f"truthsocial-py live test {run_id}: image post",
                 media_files=[IMAGE_PATH],
                 visibility=VISIBILITY,
-                idempotency_key=f"truthpy-{run_id}-image",
+                idempotency_key=f"truthsocial-py-{run_id}-image",
             )
             print_status("Image post", image_post)
     except TruthSocialError as exc:

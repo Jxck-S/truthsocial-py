@@ -3,6 +3,7 @@ from .app import TransportFactory, TruthSocialApp
 from .client import (
     DEFAULT_BASE_URL,
     DEFAULT_SCOPE,
+    DEFAULT_USER_AGENT,
     MediaSource,
     OOB_REDIRECT_URI,
     TruthSocialClient,
@@ -35,6 +36,7 @@ __all__ = [
     "CredentialDiscoveryError",
     "DEFAULT_BASE_URL",
     "DEFAULT_SCOPE",
+    "DEFAULT_USER_AGENT",
     "MediaAttachment",
     "MediaSource",
     "NetworkError",

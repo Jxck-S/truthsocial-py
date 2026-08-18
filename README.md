@@ -1,8 +1,8 @@
-# truthpy
+# truthsocial-py
 
 An unofficial, typed Python client for Truth Social.
 
-`truthpy` supports OAuth app discovery, manual app configuration, multiple
+`truthsocial-py` supports OAuth app discovery, manual app configuration, multiple
 independent user sessions, text and media posts, replies, and structured API
 errors.
 
@@ -26,8 +26,20 @@ errors.
 Python 3.10 or newer is required.
 
 ```bash
-git clone https://github.com/Jxck-S/truthpy.git
-cd truthpy
+python -m pip install truthsocial-py
+```
+
+The distribution is `truthsocial-py`; the import package is `truthsocial_py`:
+
+```python
+from truthsocial_py import TruthSocialApp
+```
+
+To work on the library itself:
+
+```bash
+git clone https://github.com/Jxck-S/truthsocial-py.git
+cd truthsocial-py
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
@@ -40,7 +52,7 @@ Create an app from the current Truth Social web deployment, then log in:
 ```python
 import getpass
 
-from truthpy import TruthSocialApp
+from truthsocial_py import TruthSocialApp
 
 
 app = TruthSocialApp.from_web()
@@ -50,7 +62,7 @@ with app.login(
     password=getpass.getpass("Truth Social password: "),
 ) as client:
     account = client.verify_credentials()
-    status = client.post_status("Hello from truthpy!")
+    status = client.post_status("Hello from truthsocial-py!")
     print(f"Posted as @{account.acct}: {status.url}")
 ```
 
@@ -105,6 +117,22 @@ Create a client from a previously saved token without logging in again:
 ```python
 alice = app.new_client(access_token=load_alice_token())
 ```
+
+## User agent
+
+Requests are sent with `truthsocial-py/<version>` by default, exposed as
+`truthsocial_py.DEFAULT_USER_AGENT`. Override it on an app or a client:
+
+```python
+from truthsocial_py import DEFAULT_USER_AGENT, TruthSocialApp
+
+app = TruthSocialApp.from_web(user_agent="my-bot/2.0 (+https://example.com)")
+client = app.new_client()  # inherits the app's user agent
+print(client.user_agent)
+```
+
+`TruthSocialClient(..., user_agent=...)` works the same way. The value must be
+a non-empty, header-safe string; anything else raises `ConfigurationError`.
 
 ## Media posts
 
@@ -163,7 +191,7 @@ The lower-level equivalent is
 `TruthSocialClient` can be used directly:
 
 ```python
-from truthpy import TruthSocialClient
+from truthsocial_py import TruthSocialClient
 
 
 with TruthSocialClient(
@@ -226,5 +254,5 @@ python examples/manual_smoke_test.py
 ```
 
 After confirmation, the script creates a public text post, a public reply, and
-a public image post using `examples/truthpy-test.png`. It does not delete them
+a public image post using `examples/truthsocial-py-test.png`. It does not delete them
 afterward.

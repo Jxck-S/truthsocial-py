@@ -6,15 +6,18 @@ from pathlib import Path
 
 WIDTH = 640
 HEIGHT = 360
-OUTPUT = Path(__file__).with_name("truthpy-test.png")
+OUTPUT = Path(__file__).with_name("truthsocial-py-test.png")
 
 FONT = {
     "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "C": ("01111", "10000", "10000", "10000", "10000", "10000", "01111"),
     "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
     "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
     "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
     "I": ("11111", "00100", "00100", "00100", "00100", "00100", "11111"),
+    "L": ("10000", "10000", "10000", "10000", "10000", "10000", "11111"),
     "M": ("10001", "11011", "10101", "10101", "10001", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
     "P": ("11110", "10001", "10001", "11110", "10000", "10000", "10000"),
     "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
     "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
@@ -99,8 +102,8 @@ def generate(path: Path = OUTPUT) -> Path:
     fill_rect(pixels, 32, 32, WIDTH - 64, 8, (226, 48, 75))
     fill_rect(pixels, 32, HEIGHT - 40, WIDTH - 64, 8, (226, 48, 75))
 
-    draw_text(pixels, "TRUTHPY", 92, 92, 12, (8, 13, 27))
-    draw_text(pixels, "TRUTHPY", 86, 86, 12, (245, 247, 255))
+    draw_text(pixels, "TRUTHSOCIAL", 62, 106, 8, (8, 13, 27))
+    draw_text(pixels, "TRUTHSOCIAL", 56, 100, 8, (245, 247, 255))
     draw_text(pixels, "MEDIA TEST", 142, 232, 6, (226, 48, 75))
 
     scanlines = bytearray()
@@ -117,7 +120,7 @@ def generate(path: Path = OUTPUT) -> Path:
             struct.pack(">IIBBBBB", WIDTH, HEIGHT, 8, 2, 0, 0, 0),
         )
     )
-    png.extend(png_chunk(b"tEXt", b"Software\x00truthpy test generator"))
+    png.extend(png_chunk(b"tEXt", b"Software\x00truthsocial-py test generator"))
     png.extend(png_chunk(b"IDAT", zlib.compress(bytes(scanlines), level=9)))
     png.extend(png_chunk(b"IEND", b""))
     path.write_bytes(png)

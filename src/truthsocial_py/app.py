@@ -10,6 +10,7 @@ from .client import (
     DEFAULT_SCOPE,
     OOB_REDIRECT_URI,
     TruthSocialClient,
+    _is_header_safe,
     _normalize_base_url,
 )
 from .errors import (
@@ -34,10 +35,12 @@ class TruthSocialApp:
         timeout: float | httpx.Timeout | None = 20.0,
         transport_factory: TransportFactory | None = None,
         auto_rediscover: bool = False,
+        user_agent: str | None = None,
     ) -> None:
         self._base_url = _normalize_base_url(base_url)
         self._timeout = timeout
         self._transport_factory = transport_factory
+        self._user_agent = user_agent
         self._auto_rediscover = auto_rediscover
         self._lock = RLock()
 
@@ -45,6 +48,10 @@ class TruthSocialApp:
             raise ConfigurationError("transport_factory must be callable")
         if not isinstance(auto_rediscover, bool):
             raise ConfigurationError("auto_rediscover must be a boolean")
+        if user_agent is not None and not _is_header_safe(user_agent):
+            raise ConfigurationError(
+                "user_agent must be a non-empty header-safe string"
+            )
 
         self._credentials = OAuthAppCredentials(
             client_id=self._validate_credential("client_id", client_id),
@@ -62,6 +69,7 @@ class TruthSocialApp:
         timeout: float | httpx.Timeout | None = 20.0,
         transport_factory: TransportFactory | None = None,
         auto_rediscover: bool = True,
+        user_agent: str | None = None,
     ) -> TruthSocialApp:
         """Create an app from the OAuth identity in the deployed web client."""
 
@@ -72,6 +80,7 @@ class TruthSocialApp:
             base_url=normalized_base_url,
             timeout=timeout,
             transport=cls._make_transport_from_factory(transport_factory),
+            user_agent=user_agent,
         ) as client:
             credentials = client.discover_web_app_credentials()
 
@@ -82,6 +91,7 @@ class TruthSocialApp:
             timeout=timeout,
             transport_factory=transport_factory,
             auto_rediscover=auto_rediscover,
+            user_agent=user_agent,
         )
         app._credentials = credentials
         return app
@@ -98,6 +108,12 @@ class TruthSocialApp:
     @property
     def auto_rediscover(self) -> bool:
         return self._auto_rediscover
+
+    @property
+    def user_agent(self) -> str | None:
+        """Override sent as User-Agent, or None to use the library default."""
+
+        return self._user_agent
 
     @property
     def credential_source(self) -> str:
@@ -198,6 +214,7 @@ class TruthSocialApp:
             base_url=self._base_url,
             timeout=self._timeout,
             transport=self._make_transport(),
+            user_agent=self._user_agent,
         )
 
     def _discovery_client(self) -> TruthSocialClient:
@@ -205,6 +222,7 @@ class TruthSocialApp:
             base_url=self._base_url,
             timeout=self._timeout,
             transport=self._make_transport(),
+            user_agent=self._user_agent,
         )
 
     def _make_transport(self) -> httpx.BaseTransport | None:
