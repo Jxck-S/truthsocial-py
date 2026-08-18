@@ -1,5 +1,9 @@
 # truthsocial-py
 
+<div align="center">
+  <img src="https://raw.githubusercontent.com/Jxck-S/truthsocial-py/main/docs/assets/truthsocial-py.png" alt="truthsocial-py logo" width="420" />
+</div>
+
 An unofficial, typed Python client for Truth Social.
 
 `truthsocial-py` supports OAuth app discovery, manual app configuration, multiple
