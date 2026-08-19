@@ -171,3 +171,119 @@ class Status:
             media_attachments=attachments,
             raw=_raw(payload),
         )
+
+
+class DeliveryMethod(str, Enum):
+    """Channels a new-device security code can be delivered over."""
+
+    EMAIL = "email"
+    SMS = "sms"
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryOption:
+    """One delivery channel offered for a device challenge.
+
+    ``value`` is the masked destination Truth Social will send the code to
+    (a partially redacted email address or phone number), suitable for
+    showing to a human choosing between options.
+    """
+
+    kind: str
+    value: str | None = None
+    raw: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
+        repr=False,
+    )
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "DeliveryOption":
+        return cls(
+            kind=_string(payload, "kind").strip().casefold(),
+            value=_optional_string(payload, "value"),
+            raw=_raw(payload),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceChallenge:
+    """A new-device verification challenge raised by a rejected login.
+
+    Truth Social answers a password grant from an unrecognised device with
+    HTTP 403 and ``error: "security_code_required"``; the response carries the
+    challenge id and the delivery channels the account supports.
+    """
+
+    challenge_id: str
+    username: str = ""
+    delivery_options: tuple[DeliveryOption, ...] = ()
+    detail: str = ""
+    raw: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
+        repr=False,
+    )
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        username: str = "",
+    ) -> "DeviceChallenge":
+        options_payload = payload.get("supported_delivery_methods")
+        options = (
+            tuple(
+                DeliveryOption.from_payload(item)
+                for item in options_payload
+                if isinstance(item, Mapping)
+            )
+            if isinstance(options_payload, list)
+            else ()
+        )
+        return cls(
+            challenge_id=_string(payload, "challenge_id"),
+            username=username,
+            delivery_options=options,
+            detail=_error_detail(payload),
+            raw=_raw(payload),
+        )
+
+    @property
+    def delivery_kinds(self) -> tuple[str, ...]:
+        """The ``kind`` of every offered delivery option, e.g. ``("email",)``."""
+
+        return tuple(option.kind for option in self.delivery_options if option.kind)
+
+    def option_for(self, method: str | DeliveryMethod) -> DeliveryOption | None:
+        """Return the offered option matching ``method``, if any."""
+
+        wanted = _delivery_kind(method)
+        for option in self.delivery_options:
+            if option.kind == wanted:
+                return option
+        return None
+
+
+def _delivery_kind(method: str | DeliveryMethod) -> str:
+    value = method.value if isinstance(method, DeliveryMethod) else method
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    return value.strip().casefold()
+
+
+def _error_detail(payload: Mapping[str, Any]) -> str:
+    """Pull the human-readable sentence out of an API error payload.
+
+    Truth Social puts the terse machine code in ``error`` and the sentence
+    worth showing a human in ``errors[0].error_message``.
+    """
+
+    errors = payload.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if not isinstance(item, Mapping):
+                continue
+            message = item.get("error_message")
+            if isinstance(message, str) and message:
+                return message
+    return ""

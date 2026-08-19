@@ -1,5 +1,16 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import DeviceChallenge
+
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .models import DeviceChallenge
+
 
 class TruthSocialError(Exception):
     """Base exception for all truthsocial-py errors."""
@@ -50,6 +61,68 @@ class APIError(TruthSocialError):
 
 class AuthenticationError(APIError):
     """Raised when login fails or an access token is rejected."""
+
+
+class DeviceChallengeRequired(AuthenticationError):
+    """Raised when Truth Social requires a security code for a new device.
+
+    This is *not* a bad-credentials failure: the username and password were
+    accepted, but the login came from a device Truth Social has not seen
+    before, so it wants a 6-digit code delivered out of band first.
+
+    ``challenge`` carries everything needed to continue the flow
+    (``challenge_id``, ``user_id``, and the delivery methods the account
+    supports). Callers should branch on this exception type rather than on
+    ``error_code``.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        challenge: "DeviceChallenge",
+        request_id: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.challenge = challenge
+        super().__init__(
+            message,
+            status_code=status_code,
+            request_id=request_id,
+            error_code=error_code,
+        )
+
+
+class DeviceChallengeRequired(AuthenticationError):
+    """Raised when Truth Social wants a security code for an unknown device.
+
+    This is *not* a bad-credentials failure: the username and password were
+    accepted, but the login came from a device Truth Social has not seen
+    before, so it wants a 6-digit code delivered out of band first. Callers
+    should branch on this exception type rather than on ``error_code``.
+
+    ``challenge`` carries the ``challenge_id`` and the delivery options needed
+    to continue via :meth:`TruthSocialClient.send_security_code` and
+    :meth:`TruthSocialClient.login_with_security_code`.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        challenge: DeviceChallenge,
+        request_id: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.challenge = challenge
+        super().__init__(
+            message,
+            status_code=status_code,
+            request_id=request_id,
+            error_code=error_code,
+        )
 
 
 class RateLimitError(APIError):

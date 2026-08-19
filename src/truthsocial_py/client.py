@@ -19,6 +19,7 @@ from ._version import __version__
 from .errors import (
     APIError,
     AuthenticationError,
+    DeviceChallengeRequired,
     ConfigurationError,
     CredentialDiscoveryError,
     NetworkError,
@@ -28,11 +29,15 @@ from .errors import (
 )
 from .models import (
     Account,
+    DeliveryMethod,
+    DeviceChallenge,
     MediaAttachment,
     OAuthAppCredentials,
     OAuthToken,
     Status,
     Visibility,
+    _delivery_kind,
+    _error_detail,
 )
 
 DEFAULT_BASE_URL = "https://truthsocial.com"
@@ -40,6 +45,11 @@ DEFAULT_SCOPE = "read write follow push"
 OOB_REDIRECT_URI = "urn:ietf:wg:oauth:2.0:oob"
 DEFAULT_USER_AGENT = f"truthsocial-py/{__version__}"
 MediaSource: TypeAlias = str | PathLike[str] | BinaryIO
+
+TOKEN_PATH = "/oauth/v2/token"
+CHOOSE_DELIVERY_METHOD_PATH = "/oauth/v2/choose_delivery_method"
+VERIFY_SECURITY_CODE_PATH = "/oauth/v2/verify_security_code"
+SECURITY_CODE_REQUIRED_ERROR = "security_code_required"
 
 _MAX_DISCOVERY_HTML_BYTES = 1_000_000
 _MAX_DISCOVERY_SCRIPT_BYTES = 4_000_000
@@ -234,7 +244,7 @@ class TruthSocialClient:
 
         payload = self._request_json(
             "POST",
-            "/oauth/v2/token",
+            TOKEN_PATH,
             json_body={
                 "client_id": app_client_id,
                 "client_secret": app_client_secret,
@@ -245,7 +255,131 @@ class TruthSocialClient:
                 "password": password,
             },
             authentication_request=True,
+            challenge_username=username,
         )
+        return self._store_token(payload)
+
+    def send_security_code(
+        self,
+        challenge: DeviceChallenge | str,
+        method: str | DeliveryMethod,
+        *,
+        username: str | None = None,
+    ) -> dict[str, Any]:
+        """Ask Truth Social to deliver a new-device security code.
+
+        ``challenge`` is the :class:`DeviceChallenge` carried by a
+        :class:`DeviceChallengeRequired` (or a bare challenge id, in which case
+        ``username`` is required). ``method`` is a delivery kind offered by the
+        challenge — ``"email"`` or ``"sms"``. Calling this again for the same
+        challenge resends the code.
+        """
+
+        if isinstance(challenge, DeviceChallenge):
+            challenge_id = challenge.challenge_id
+            account = username or challenge.username
+        else:
+            challenge_id = challenge
+            account = username or ""
+
+        if not isinstance(challenge_id, str) or not challenge_id:
+            raise ConfigurationError("challenge_id must be a non-empty string")
+        if not account:
+            raise ConfigurationError(
+                "username is required to request a security code"
+            )
+
+        kind = _delivery_kind(method)
+        if not kind:
+            raise ConfigurationError("method must be a non-empty string")
+        if (
+            isinstance(challenge, DeviceChallenge)
+            and challenge.delivery_kinds
+            and kind not in challenge.delivery_kinds
+        ):
+            raise ConfigurationError(
+                f"delivery method {kind!r} is not offered for this challenge; "
+                f"supported: {', '.join(challenge.delivery_kinds)}"
+            )
+
+        return self._request_json(
+            "POST",
+            CHOOSE_DELIVERY_METHOD_PATH,
+            json_body={
+                "username": account,
+                "challenge_id": challenge_id,
+                "delivery_method": kind,
+            },
+            authentication_request=True,
+            challenge_username=account,
+        )
+
+    def login_with_security_code(
+        self,
+        username: str,
+        password: str,
+        *,
+        security_code: str,
+        challenge: DeviceChallenge | str,
+        scope: str = DEFAULT_SCOPE,
+        redirect_uri: str = OOB_REDIRECT_URI,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ) -> OAuthToken:
+        """Complete a new-device login with the delivered security code.
+
+        This repeats the password grant with the challenge id and the code
+        attached; the credentials are still required because the endpoint
+        issues the token itself.
+        """
+
+        app_client_id = client_id or self._client_id
+        app_client_secret = client_secret or self._client_secret
+        if not app_client_id or not app_client_secret:
+            raise ConfigurationError(
+                "login requires client_id and client_secret app credentials"
+            )
+        if not isinstance(username, str) or not username:
+            raise ConfigurationError("username must be a non-empty string")
+        if not isinstance(password, str) or not password:
+            raise ConfigurationError("password must be a non-empty string")
+        if not isinstance(scope, str) or not scope.strip():
+            raise ConfigurationError("scope must be a non-empty string")
+        if not isinstance(redirect_uri, str) or not redirect_uri:
+            raise ConfigurationError("redirect_uri must be a non-empty string")
+
+        challenge_id = (
+            challenge.challenge_id
+            if isinstance(challenge, DeviceChallenge)
+            else challenge
+        )
+        if not isinstance(challenge_id, str) or not challenge_id:
+            raise ConfigurationError("challenge_id must be a non-empty string")
+
+        code = security_code.strip() if isinstance(security_code, str) else ""
+        if not code:
+            raise ConfigurationError("security_code must be a non-empty string")
+
+        payload = self._request_json(
+            "POST",
+            VERIFY_SECURITY_CODE_PATH,
+            json_body={
+                "client_id": app_client_id,
+                "client_secret": app_client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "password",
+                "scope": scope,
+                "username": username,
+                "password": password,
+                "challenge_id": challenge_id,
+                "security_code": code,
+            },
+            authentication_request=True,
+            challenge_username=username,
+        )
+        return self._store_token(payload)
+
+    def _store_token(self, payload: Mapping[str, Any]) -> OAuthToken:
         token = OAuthToken.from_payload(payload)
         if not token.access_token:
             raise ProtocolError(
@@ -634,6 +768,7 @@ class TruthSocialClient:
         *,
         authenticated: bool = False,
         authentication_request: bool = False,
+        challenge_username: str | None = None,
         headers: Mapping[str, str] | None = None,
         json_body: Mapping[str, Any] | None = None,
         files: Mapping[str, tuple[str, BinaryIO, str]] | None = None,
@@ -667,6 +802,7 @@ class TruthSocialClient:
             self._raise_for_error(
                 response,
                 authentication_request=authentication_request,
+                challenge_username=challenge_username,
             )
 
         try:
@@ -775,6 +911,7 @@ class TruthSocialClient:
         response: httpx.Response,
         *,
         authentication_request: bool,
+        challenge_username: str | None = None,
     ) -> None:
         message = f"Truth Social API returned HTTP {response.status_code}"
         try:
@@ -782,7 +919,10 @@ class TruthSocialClient:
         except (json.JSONDecodeError, UnicodeDecodeError):
             payload = None
 
-        if isinstance(payload, Mapping):
+        detail = _error_detail(payload) if isinstance(payload, Mapping) else ""
+        if detail:
+            message = detail
+        elif isinstance(payload, Mapping):
             for key in ("error_description", "error", "message"):
                 value = payload.get(key)
                 if isinstance(value, str) and value:
@@ -803,6 +943,21 @@ class TruthSocialClient:
                 error_code=error_code,
                 retry_after=TruthSocialClient._parse_retry_after(
                     response.headers.get("retry-after")
+                ),
+            )
+        if (
+            response.status_code == 403
+            and error_code == SECURITY_CODE_REQUIRED_ERROR
+            and isinstance(payload, Mapping)
+        ):
+            raise DeviceChallengeRequired(
+                message,
+                status_code=response.status_code,
+                request_id=request_id,
+                error_code=error_code,
+                challenge=DeviceChallenge.from_payload(
+                    payload,
+                    username=challenge_username or "",
                 ),
             )
         if response.status_code in {401, 403} or (

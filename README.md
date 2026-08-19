@@ -22,6 +22,7 @@ errors.
 - Rediscover rotated web-app credentials automatically or on demand
 - Publish text and image posts
 - Reply to a status by ID or `Status` object
+- Answer new-device security-code challenges over email or SMS
 - Reuse existing access tokens
 - Handle authentication, rate-limit, transport, and protocol errors
 
@@ -215,6 +216,42 @@ with TruthSocialClient() as client:
 Use `discover_web_app_credentials()` to obtain the typed app identity without
 logging in.
 
+## New device verification
+
+Logging in from a device Truth Social has not seen before is rejected with a
+`DeviceChallengeRequired` — a subclass of `AuthenticationError`, so existing
+handlers still catch it, but it is raised only when the username and password
+were accepted. Answering it takes two more calls: pick a delivery method to
+have a 6-digit code sent, then repeat the login with that code.
+
+```python
+from truthsocial_py import DeviceChallengeRequired, TruthSocialApp
+
+app = TruthSocialApp.from_web()
+username, password = "someone", "hunter2"
+
+try:
+    client = app.login(username, password)
+except DeviceChallengeRequired as exc:
+    challenge = exc.challenge
+    print(exc.message)  # "New device login detected. Please select a..."
+    for option in challenge.delivery_options:
+        print(option.kind, option.value)  # e.g. email j***@example.com
+
+    client = app.new_client()
+    client.send_security_code(challenge, "email")
+    code = input("security code: ")
+    client.login_with_security_code(
+        username, password, security_code=code, challenge=challenge
+    )
+```
+
+`send_security_code` may be called again with the same challenge to resend the
+code. The password is required a second time because
+`/oauth/v2/verify_security_code` issues the token itself; the challenge is not
+a token exchange. `TruthSocialApp.login` never retries credential rediscovery
+on this error, since the app credentials were not the problem.
+
 ## Posting behavior
 
 Status creation is not retried automatically because a transport failure can
@@ -230,7 +267,7 @@ All library exceptions inherit from `TruthSocialError`:
 
 - `ConfigurationError` and `NotAuthenticatedError`
 - `CredentialDiscoveryError`
-- `AuthenticationError`
+- `AuthenticationError`, and its `DeviceChallengeRequired` subclass
 - `RateLimitError`, including an optional `retry_after`
 - `APIError`
 - `NetworkError` and `ProtocolError`

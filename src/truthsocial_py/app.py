@@ -16,6 +16,7 @@ from .client import (
 from .errors import (
     AuthenticationError,
     ConfigurationError,
+    DeviceChallengeRequired,
     TruthSocialError,
 )
 from .models import OAuthAppCredentials
@@ -165,6 +166,11 @@ class TruthSocialApp:
                 scope=scope,
                 redirect_uri=redirect_uri,
             )
+        except DeviceChallengeRequired:
+            # The credentials were accepted; rediscovering and retrying would
+            # only burn a second failed attempt. The caller must answer the
+            # challenge instead.
+            raise
         except AuthenticationError as exc:
             if (
                 not self._auto_rediscover
