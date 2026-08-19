@@ -22,6 +22,8 @@ errors.
 - Rediscover rotated web-app credentials automatically or on demand
 - Publish text and image posts
 - Reply to a status by ID or `Status` object
+- Answer new-device security-code challenges over email or SMS
+- Complete 2FA logins with an authenticator (TOTP) code
 - Reuse existing access tokens
 - Handle authentication, rate-limit, transport, and protocol errors
 
@@ -215,6 +217,103 @@ with TruthSocialClient() as client:
 Use `discover_web_app_credentials()` to obtain the typed app identity without
 logging in.
 
+## New device verification
+
+Logging in from a device Truth Social has not seen before is rejected with a
+`DeviceChallengeRequired` — a subclass of `AuthenticationError`, so existing
+handlers still catch it, but it is raised only when the username and password
+were accepted. Answering it takes two more calls: pick a delivery method to
+have a 6-digit code sent, then repeat the login with that code.
+
+Own the client yourself so the challenge is answered on the session that
+raised it (see [Challenge handling](#challenge-handling) below):
+
+```python
+from truthsocial_py import DeviceChallengeRequired, TruthSocialApp
+
+app = TruthSocialApp.from_web()
+username, password = "someone", "hunter2"
+
+with app.new_client() as client:
+    try:
+        client.login(username, password)
+    except DeviceChallengeRequired as exc:
+        challenge = exc.challenge
+        print(exc.message)  # "New device login detected. Please select a..."
+        for option in challenge.delivery_options:
+            print(option.kind, option.value)  # e.g. email j***@example.com
+
+        client.send_security_code(challenge, "email")
+        client.login_with_security_code(
+            username,
+            password,
+            security_code=input("security code: "),
+            challenge=challenge,
+        )
+
+    client.post_status("hello from a verified device")
+```
+
+`send_security_code` may be called again with the same challenge to resend the
+code. The password is required a second time because
+`/oauth/v2/verify_security_code` issues the token itself; the challenge is not
+a token exchange. `TruthSocialApp.login` never retries credential rediscovery
+on this error, since the app credentials were not the problem.
+
+## Two-factor accounts
+
+An account with 2FA enabled rejects the password grant with `MfaRequired`,
+another `AuthenticationError` subclass, handing back a short-lived `mfa_token`.
+That token stands in for the password — redeeming it with the authenticator
+code returns the access token directly.
+
+```python
+from truthsocial_py import MfaRequired, TruthSocialApp
+
+app = TruthSocialApp.from_web()
+
+with app.new_client() as client:
+    try:
+        client.login("someone", "hunter2")
+    except MfaRequired as exc:
+        client.login_with_mfa_code(input("2FA code: "), challenge=exc.challenge)
+
+    client.post_status("hello from a 2FA account")
+```
+
+`login_with_mfa_code` defaults to `challenge_type="totp"`, the only type Truth
+Social currently advertises. Note that the 403 body claims "The 2FA code
+entered is incorrect" even on the first prompt, before any code has been sent;
+that sentence is kept on `exc.challenge.detail` rather than used as the
+exception message, so it cannot be mistaken for a rejected code. A code that
+really is wrong fails the `login_with_mfa_code` call with a plain
+`AuthenticationError` carrying that same message.
+
+## Challenge handling
+
+Both challenge flows are answered on the **same client that raised them**.
+Each client carries its own `X-Truth-Session-Id` and connection, and a
+challenge belongs to that session, so create the client first and keep it in
+scope for the handler:
+
+```python
+with app.new_client() as client:   # you own the client
+    try:
+        client.login(username, password)
+    except MfaRequired as exc:
+        client.login_with_mfa_code(code, challenge=exc.challenge)
+```
+
+`TruthSocialApp.login` creates a client internally and closes it when login
+fails, so it cannot be used to answer a challenge — it is the one-shot path
+for accounts with 2FA disabled logging in from a known device. Owning the
+client trades away its automatic retry on rotated app credentials; handle that
+by calling `app.rediscover()` yourself if a login fails with an
+`invalid_client` error.
+
+An account can require both: `/oauth/v2/verify_security_code` may itself
+return `mfa_required`, so the two handlers compose on the one client.
+
 ## Posting behavior
 
 Status creation is not retried automatically because a transport failure can
@@ -230,7 +329,8 @@ All library exceptions inherit from `TruthSocialError`:
 
 - `ConfigurationError` and `NotAuthenticatedError`
 - `CredentialDiscoveryError`
-- `AuthenticationError`
+- `AuthenticationError`, and its `DeviceChallengeRequired` and `MfaRequired`
+  subclasses
 - `RateLimitError`, including an optional `retry_after`
 - `APIError`
 - `NetworkError` and `ProtocolError`

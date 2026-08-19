@@ -50,6 +50,22 @@ python examples/manual_smoke_test.py
   `Status`, `OAuthAppCredentials`) built via `from_payload` classmethods that
   tolerate missing/oddly typed fields and retain the raw mapping.
 
+New-device verification lives on the client alongside `login`:
+`send_security_code` posts `/oauth/v2/choose_delivery_method`, and
+`login_with_security_code` posts `/oauth/v2/verify_security_code` (the full
+password grant plus `challenge_id` and `security_code`). A 403 with
+`error: "security_code_required"` becomes `DeviceChallengeRequired`, whose
+`challenge` holds the `challenge_id` and the `{kind, value}` delivery options;
+`app.login` deliberately does not spend a rediscover retry on it.
+
+2FA accounts take the sibling branch: a 403 with `error: "mfa_required"`
+becomes `MfaRequired`, whose `challenge` holds the `mfa_token`, and
+`login_with_mfa_code` posts `/oauth/mfa/challenge` with
+`challenge_type: "totp"` plus the token and code — no password. That response
+body carries a misleading "2FA code entered is incorrect" sentence on the
+first prompt, so `MfaRequired` uses a fixed message and keeps the sentence on
+`challenge.detail`; do not surface it as the message.
+
 `errors.py` defines the exception tree rooted at `TruthSocialError`.
 `__init__.py` re-exports the entire public surface with an explicit `__all__` —
 add new public names there.
@@ -74,7 +90,10 @@ candidates, and *ambiguous* multiple candidates all raise
 - `post_status` is intentionally never auto-retried (unknown outcome on
   transport failure); callers supply `idempotency_key` instead.
 - Endpoint payload shapes mirror what the Truth Social web client sends; the
-  `truthsocial*.har` files at the repo root are the captured reference traffic.
+  `truthsocial*.har` files at the repo root are the captured reference traffic
+  (git-ignored, and they contain real credentials). Most JS/JSON bodies in them
+  are stored base64-encoded, so plain grep misses them — decode
+  `content.text` where `content.encoding == "base64"` before searching.
 
 ## Release
 
