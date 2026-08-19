@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models import DeviceChallenge
+    from .models import DeviceChallenge, MfaChallenge
 
 
 from typing import TYPE_CHECKING
@@ -113,6 +113,32 @@ class DeviceChallengeRequired(AuthenticationError):
         *,
         status_code: int,
         challenge: DeviceChallenge,
+        request_id: str | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        self.challenge = challenge
+        super().__init__(
+            message,
+            status_code=status_code,
+            request_id=request_id,
+            error_code=error_code,
+        )
+
+
+class MfaRequired(AuthenticationError):
+    """Raised when an account has 2FA enabled and needs an authenticator code.
+
+    Like :class:`DeviceChallengeRequired` this means the password was
+    accepted. ``challenge`` carries the short-lived ``mfa_token`` that
+    :meth:`TruthSocialClient.login_with_mfa_code` redeems along with the code.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int,
+        challenge: MfaChallenge,
         request_id: str | None = None,
         error_code: str | None = None,
     ) -> None:

@@ -287,3 +287,75 @@ def _error_detail(payload: Mapping[str, Any]) -> str:
             if isinstance(message, str) and message:
                 return message
     return ""
+
+
+@dataclass(frozen=True, slots=True)
+class MfaChallenge:
+    """A multi-factor authentication challenge raised by a rejected login.
+
+    Truth Social answers a password grant for a 2FA-enabled account with
+    HTTP 403 and ``error: "mfa_required"``, handing back a short-lived
+    ``mfa_token``. That token — not the password — is what redeems the
+    authenticator code.
+
+    ``detail`` is the sentence from the response's ``errors`` list. Note that
+    Truth Social sends "The 2FA code entered is incorrect" even on the first
+    prompt, before any code has been submitted, so it is kept here rather than
+    used as the exception message.
+    """
+
+    mfa_token: str = field(repr=False)
+    username: str = ""
+    challenge_types: tuple[str, ...] = ()
+    detail: str = ""
+    raw: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
+        repr=False,
+    )
+
+    @classmethod
+    def from_payload(
+        cls,
+        payload: Mapping[str, Any],
+        *,
+        username: str = "",
+    ) -> "MfaChallenge":
+        return cls(
+            mfa_token=_string(payload, "mfa_token"),
+            username=username,
+            challenge_types=_challenge_types(
+                payload.get("supported_challenge_types")
+            ),
+            detail=_error_detail(payload),
+            raw=_raw(payload),
+        )
+
+    def supports(self, challenge_type: str) -> bool:
+        """Return whether ``challenge_type`` is offered for this challenge."""
+
+        if not self.challenge_types:
+            return True
+        wanted = challenge_type.strip().casefold()
+        return wanted in self.challenge_types
+
+
+def _challenge_types(value: Any) -> tuple[str, ...]:
+    """Normalise ``supported_challenge_types``.
+
+    Truth Social sends a bare string (``"totp"``) rather than a list, but
+    tolerate both.
+    """
+
+    if isinstance(value, str):
+        return tuple(
+            part.strip().casefold()
+            for part in value.split(",")
+            if part.strip()
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(
+            item.strip().casefold()
+            for item in value
+            if isinstance(item, str) and item.strip()
+        )
+    return ()

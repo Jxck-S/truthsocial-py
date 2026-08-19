@@ -20,6 +20,7 @@ from .errors import (
     APIError,
     AuthenticationError,
     DeviceChallengeRequired,
+    MfaRequired,
     ConfigurationError,
     CredentialDiscoveryError,
     NetworkError,
@@ -32,6 +33,7 @@ from .models import (
     DeliveryMethod,
     DeviceChallenge,
     MediaAttachment,
+    MfaChallenge,
     OAuthAppCredentials,
     OAuthToken,
     Status,
@@ -50,6 +52,9 @@ TOKEN_PATH = "/oauth/v2/token"
 CHOOSE_DELIVERY_METHOD_PATH = "/oauth/v2/choose_delivery_method"
 VERIFY_SECURITY_CODE_PATH = "/oauth/v2/verify_security_code"
 SECURITY_CODE_REQUIRED_ERROR = "security_code_required"
+MFA_CHALLENGE_PATH = "/oauth/mfa/challenge"
+MFA_REQUIRED_ERROR = "mfa_required"
+DEFAULT_MFA_CHALLENGE_TYPE = "totp"
 
 _MAX_DISCOVERY_HTML_BYTES = 1_000_000
 _MAX_DISCOVERY_SCRIPT_BYTES = 4_000_000
@@ -376,6 +381,77 @@ class TruthSocialClient:
             },
             authentication_request=True,
             challenge_username=username,
+        )
+        return self._store_token(payload)
+
+    def login_with_mfa_code(
+        self,
+        code: str,
+        *,
+        challenge: MfaChallenge | str,
+        challenge_type: str = DEFAULT_MFA_CHALLENGE_TYPE,
+        scope: str = DEFAULT_SCOPE,
+        redirect_uri: str = OOB_REDIRECT_URI,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+    ) -> OAuthToken:
+        """Complete a 2FA login with an authenticator code.
+
+        ``challenge`` is the :class:`MfaChallenge` carried by an
+        :class:`MfaRequired` (or a bare ``mfa_token``). Unlike the new-device
+        flow this does not resend the password: the ``mfa_token`` stands in
+        for it.
+        """
+
+        app_client_id = client_id or self._client_id
+        app_client_secret = client_secret or self._client_secret
+        if not app_client_id or not app_client_secret:
+            raise ConfigurationError(
+                "login requires client_id and client_secret app credentials"
+            )
+        if not isinstance(scope, str) or not scope.strip():
+            raise ConfigurationError("scope must be a non-empty string")
+        if not isinstance(redirect_uri, str) or not redirect_uri:
+            raise ConfigurationError("redirect_uri must be a non-empty string")
+
+        mfa_token = (
+            challenge.mfa_token
+            if isinstance(challenge, MfaChallenge)
+            else challenge
+        )
+        if not isinstance(mfa_token, str) or not mfa_token:
+            raise ConfigurationError("mfa_token must be a non-empty string")
+
+        kind = (
+            challenge_type.strip().casefold()
+            if isinstance(challenge_type, str)
+            else ""
+        )
+        if not kind:
+            raise ConfigurationError("challenge_type must be a non-empty string")
+        if isinstance(challenge, MfaChallenge) and not challenge.supports(kind):
+            raise ConfigurationError(
+                f"challenge type {kind!r} is not offered for this challenge; "
+                f"supported: {', '.join(challenge.challenge_types)}"
+            )
+
+        verification_code = code.strip() if isinstance(code, str) else ""
+        if not verification_code:
+            raise ConfigurationError("code must be a non-empty string")
+
+        payload = self._request_json(
+            "POST",
+            MFA_CHALLENGE_PATH,
+            json_body={
+                "client_id": app_client_id,
+                "client_secret": app_client_secret,
+                "challenge_type": kind,
+                "redirect_uri": redirect_uri,
+                "scope": scope,
+                "mfa_token": mfa_token,
+                "code": verification_code,
+            },
+            authentication_request=True,
         )
         return self._store_token(payload)
 
@@ -956,6 +1032,24 @@ class TruthSocialClient:
                 request_id=request_id,
                 error_code=error_code,
                 challenge=DeviceChallenge.from_payload(
+                    payload,
+                    username=challenge_username or "",
+                ),
+            )
+        if (
+            response.status_code == 403
+            and error_code == MFA_REQUIRED_ERROR
+            and isinstance(payload, Mapping)
+        ):
+            # Truth Social returns "The 2FA code entered is incorrect" here
+            # even on the first prompt, so do not surface `detail` as the
+            # message; it is kept on the challenge instead.
+            raise MfaRequired(
+                "multi-factor authentication code required",
+                status_code=response.status_code,
+                request_id=request_id,
+                error_code=error_code,
+                challenge=MfaChallenge.from_payload(
                     payload,
                     username=challenge_username or "",
                 ),

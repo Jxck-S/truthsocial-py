@@ -58,6 +58,14 @@ password grant plus `challenge_id` and `security_code`). A 403 with
 `challenge` holds the `challenge_id` and the `{kind, value}` delivery options;
 `app.login` deliberately does not spend a rediscover retry on it.
 
+2FA accounts take the sibling branch: a 403 with `error: "mfa_required"`
+becomes `MfaRequired`, whose `challenge` holds the `mfa_token`, and
+`login_with_mfa_code` posts `/oauth/mfa/challenge` with
+`challenge_type: "totp"` plus the token and code — no password. That response
+body carries a misleading "2FA code entered is incorrect" sentence on the
+first prompt, so `MfaRequired` uses a fixed message and keeps the sentence on
+`challenge.detail`; do not surface it as the message.
+
 `errors.py` defines the exception tree rooted at `TruthSocialError`.
 `__init__.py` re-exports the entire public surface with an explicit `__all__` —
 add new public names there.
