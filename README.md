@@ -323,6 +323,64 @@ application may retry a post.
 When `media_files` is used, a later upload or post failure can leave an
 uploaded attachment unused.
 
+## Shaping requests like the web client
+
+`truthsocial.com` sits behind Cloudflare Bot Management (it sets `__cf_bm`).
+Three constructor options let a caller present a more browser-like identity;
+all are opt-in and none change the default behaviour.
+
+```python
+app = TruthSocialApp.from_web(
+    user_agent=CHROME_UA,
+    headers={
+        "Sec-CH-UA": '"Chromium";v="152", "Not?A_Brand";v="24", "Google Chrome";v="152"',
+        "Sec-CH-UA-Mobile": "?0",
+        "Sec-CH-UA-Platform": '"Windows"',
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://truthsocial.com",
+        "Referer": "https://truthsocial.com/",
+    },
+)
+```
+
+`headers` is merged over the library's defaults, so `Accept` and `User-Agent`
+can be replaced. `Authorization` is refused — it is set per request from the
+access token.
+
+Send only the **low-entropy** client hints (`Sec-CH-UA`, `-Mobile`,
+`-Platform`). `truthsocial.com` returns no `Accept-CH`, so a real Chrome never
+volunteers the high-entropy set (`-Arch`, `-Bitness`, `-Full-Version-List`,
+`-Platform-Version`, `-Model`); sending them unprompted is itself a tell.
+
+A single `CookieJar` is now shared by an app and every client it mints, and is
+seeded from credential discovery — so the `__cf_bm` Cloudflare issues on first
+contact is presented on subsequent calls instead of each client arriving cold.
+
+### HTTP/2 is available, and currently makes things worse
+
+`http2=True` requires the extra:
+
+```bash
+pip install "truthsocial-py[http2]"
+```
+
+Browsers never speak HTTP/1.1 to a Cloudflare site, so enabling it *sounds*
+like it should help. Measured, it does the opposite — credential discovery,
+which succeeds every time over HTTP/1.1, is refused every time over HTTP/2:
+
+```
+run 1 http1: OK   run 1 http2: HTTP 403
+run 2 http1: OK   run 2 http2: HTTP 403
+run 3 http1: OK   run 3 http2: HTTP 403
+run 4 http1: OK   run 4 http2: HTTP 403
+```
+
+httpx's HTTP/2 fingerprint (SETTINGS values, window sizes, pseudo-header order)
+is distinctive and nothing like Chrome's, and appears to score far worse than
+plain HTTP/1.1, which is unremarkable among legitimate non-browser clients.
+The option is kept because it is the right primitive and the underlying stack
+may change, but **leave it off** unless you have measured otherwise.
+
 ## Errors
 
 All library exceptions inherit from `TruthSocialError`:
