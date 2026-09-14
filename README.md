@@ -332,8 +332,44 @@ All library exceptions inherit from `TruthSocialError`:
 - `AuthenticationError`, and its `DeviceChallengeRequired` and `MfaRequired`
   subclasses
 - `RateLimitError`, including an optional `retry_after`
+- `ForbiddenError` — a 403 with no JSON body
 - `APIError`
 - `NetworkError` and `ProtocolError`
+
+### `ForbiddenError` vs `AuthenticationError`
+
+Truth Social explains every application-level refusal in a JSON body. A 403
+that arrives with no body at all — no `error`, no `detail`, no `x-request-id`
+header — did not come from the application; it came from the edge in front of
+it, which scores requests for bot/WAF signals and drops a fraction of them.
+`/api/v1/media` is by far the most common victim, and uploads can fail this way
+at a steady single-digit-to-20% rate while the same token posts to
+`/api/v1/statuses` without a single failure.
+
+These raise `ForbiddenError`, which is **not** an `AuthenticationError`. That
+distinction matters: the access token is untouched and still valid, so
+re-authenticating cannot help, throws away a working session, and on a 2FA
+account spends a TOTP code — fast enough to collide with the previous code's
+30-second window and lock the account out of its own retry.
+
+Treat it as a transient refusal of that one request: back off for minutes
+rather than seconds (an immediate retry usually hits the same block), or
+degrade gracefully.
+
+```python
+from truthsocial_py import ForbiddenError
+
+try:
+    status = client.post_status("hello", media_files=["map.png"])
+except ForbiddenError:
+    # The upload was blocked, not the session. Post without the image.
+    status = client.post_status("hello")
+```
+
+Anything that *does* explain itself keeps the old behaviour: a 403 carrying an
+`error` code or a `detail` string, and any 401, still raise
+`AuthenticationError`, and `mfa_required` / `security_code_required` still take
+priority as `MfaRequired` / `DeviceChallengeRequired`.
 
 ## Development
 
