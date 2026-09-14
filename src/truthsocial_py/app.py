@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from http.cookiejar import CookieJar
 from threading import RLock
-from typing import Callable, TypeAlias
+from typing import Callable, Mapping, TypeAlias
 
 import httpx
 
@@ -38,13 +39,22 @@ class TruthSocialApp:
         transport_factory: TransportFactory | None = None,
         auto_rediscover: bool = False,
         user_agent: str | None = None,
+        headers: Mapping[str, str] | None = None,
+        http2: bool = False,
     ) -> None:
         self._base_url = _normalize_base_url(base_url)
         self._timeout = timeout
         self._transport_factory = transport_factory
         self._user_agent = user_agent
+        self._headers = dict(headers) if headers else None
+        self._http2 = http2
         self._auto_rediscover = auto_rediscover
         self._lock = RLock()
+        # One cookie jar shared by every client this app mints. Cloudflare
+        # hands out __cf_bm on the first response and expects it back; a fresh
+        # jar per client means every login and every upload re-enters bot
+        # management cold, which is not what a browser looks like.
+        self._cookies = CookieJar()
 
         if transport_factory is not None and not callable(transport_factory):
             raise ConfigurationError("transport_factory must be callable")
@@ -72,17 +82,26 @@ class TruthSocialApp:
         transport_factory: TransportFactory | None = None,
         auto_rediscover: bool = True,
         user_agent: str | None = None,
+        headers: Mapping[str, str] | None = None,
+        http2: bool = False,
     ) -> TruthSocialApp:
         """Create an app from the OAuth identity in the deployed web client."""
 
         if not isinstance(auto_rediscover, bool):
             raise ConfigurationError("auto_rediscover must be a boolean")
         normalized_base_url = _normalize_base_url(base_url)
+        # Discovery is the first contact with the site, so it is where
+        # Cloudflare issues __cf_bm. Collect it here and seed the app's jar
+        # with it rather than throwing it away and arriving cold at the API.
+        jar = CookieJar()
         with TruthSocialClient(
             base_url=normalized_base_url,
             timeout=timeout,
             transport=cls._make_transport_from_factory(transport_factory),
             user_agent=user_agent,
+            headers=headers,
+            cookies=jar,
+            http2=http2,
         ) as client:
             credentials = client.discover_web_app_credentials()
 
@@ -94,7 +113,10 @@ class TruthSocialApp:
             transport_factory=transport_factory,
             auto_rediscover=auto_rediscover,
             user_agent=user_agent,
+            headers=headers,
+            http2=http2,
         )
+        app._cookies = jar
         app._credentials = credentials
         return app
 
@@ -222,6 +244,9 @@ class TruthSocialApp:
             timeout=self._timeout,
             transport=self._make_transport(),
             user_agent=self._user_agent,
+            headers=self._headers,
+            cookies=self._cookies,
+            http2=self._http2,
         )
 
     def _discovery_client(self) -> TruthSocialClient:
@@ -230,6 +255,9 @@ class TruthSocialApp:
             timeout=self._timeout,
             transport=self._make_transport(),
             user_agent=self._user_agent,
+            headers=self._headers,
+            cookies=self._cookies,
+            http2=self._http2,
         )
 
     def _make_transport(self) -> httpx.BaseTransport | None:

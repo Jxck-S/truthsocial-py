@@ -16,6 +16,7 @@ authors = [
 dependencies = [
     "httpx>=0.27,<1",
 ]
+
 keywords = ["truth-social", "truthsocial", "api", "client", "mastodon"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -30,6 +31,11 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
+
+[project.optional-dependencies]
+# HTTP/2 support. Browsers never speak HTTP/1.1 to Truth Social, so anything
+# shaping requests like one wants this: pip install "truthsocial-py[http2]"
+http2 = ["httpx[http2]>=0.27,<1"]
 
 [project.urls]
 Homepage = "https://github.com/Jxck-S/truthsocial-py"

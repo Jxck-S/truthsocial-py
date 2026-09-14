@@ -9,6 +9,7 @@ from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 from os import PathLike
 from pathlib import Path
+from http.cookiejar import CookieJar
 from typing import Any, BinaryIO, Iterable, Mapping, TypeAlias
 from urllib.parse import urljoin
 from uuid import uuid4
@@ -135,6 +136,9 @@ class TruthSocialClient:
         transport: httpx.BaseTransport | None = None,
         truth_session_id: str | None = None,
         user_agent: str | None = None,
+        headers: Mapping[str, str] | None = None,
+        cookies: CookieJar | None = None,
+        http2: bool = False,
     ) -> None:
         session_id = (
             str(uuid4()) if truth_session_id is None else truth_session_id
@@ -157,14 +161,37 @@ class TruthSocialClient:
         self._truth_session_id = session_id
         self._user_agent = agent
         self._closed = False
+        # Identity headers the caller wants on every request (Sec-CH-UA,
+        # Accept-Language, Origin/Referer...). These are applied over the
+        # library's defaults, so a caller shaping requests like a browser can
+        # replace Accept and User-Agent. Authorization is refused: it is set
+        # per-request from the access token and must not be pinned here.
+        extra: dict[str, str] = {}
+        for name, value in dict(headers or {}).items():
+            if not _is_header_safe(name) or not _is_header_safe(value):
+                raise ConfigurationError(
+                    "headers must be non-empty header-safe strings"
+                )
+            if name.casefold() == "authorization":
+                raise ConfigurationError(
+                    "Authorization is managed by the client; pass access_token"
+                )
+            extra[name] = value
+
+        if not isinstance(http2, bool):
+            raise ConfigurationError("http2 must be a boolean")
+
         self._http = httpx.Client(
             timeout=timeout,
             transport=transport,
             follow_redirects=False,
+            http2=http2,
+            cookies=cookies,
             headers={
                 "Accept": "application/json",
                 "User-Agent": agent,
                 "X-Truth-Session-Id": session_id,
+                **extra,
             },
         )
 

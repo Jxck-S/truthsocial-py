@@ -74,6 +74,14 @@ a bodiless 403 is an edge/WAF rejection with a still-valid token; classifying it
 as auth made callers discard a good session and burn a TOTP code. Keep 401
 unconditionally `AuthenticationError` — only 403 is ambiguous.
 
+`TruthSocialClient` takes `headers` (merged over the library defaults; rejects
+`Authorization`), `cookies` (a `http.cookiejar.CookieJar`, shared by reference
+— an `httpx.Cookies` would be copied and defeat the point), and `http2`.
+`TruthSocialApp` owns one `CookieJar`, seeds it from discovery, and hands it to
+every client it mints so Cloudflare's `__cf_bm` persists. `http2` is opt-in via
+the `[http2]` extra and measurably gets discovery 403'd — httpx's h2 fingerprint
+scores worse than HTTP/1.1. Do not flip the default without measuring.
+
 `errors.py` defines the exception tree rooted at `TruthSocialError`.
 `__init__.py` re-exports the entire public surface with an explicit `__all__` —
 add new public names there.
