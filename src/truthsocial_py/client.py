@@ -21,6 +21,7 @@ from .errors import (
     AuthenticationError,
     DeviceChallengeRequired,
     MfaRequired,
+    ForbiddenError,
     ConfigurationError,
     CredentialDiscoveryError,
     NetworkError,
@@ -1053,6 +1054,19 @@ class TruthSocialClient:
                     payload,
                     username=challenge_username or "",
                 ),
+            )
+        # A bodiless 403 is not an auth failure. The API explains every
+        # app-level refusal in a JSON body; when there is no body at all the
+        # rejection came from the edge in front of it, and the token we sent is
+        # still perfectly good. Raising AuthenticationError here would tell
+        # callers to throw that token away and log in again -- which on a 2FA
+        # account spends a TOTP code to fix a problem it cannot fix.
+        if response.status_code == 403 and not isinstance(payload, Mapping):
+            raise ForbiddenError(
+                message,
+                status_code=response.status_code,
+                request_id=request_id,
+                error_code=error_code,
             )
         if response.status_code in {401, 403} or (
             authentication_request and response.status_code == 400

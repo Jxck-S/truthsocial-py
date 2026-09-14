@@ -66,6 +66,14 @@ body carries a misleading "2FA code entered is incorrect" sentence on the
 first prompt, so `MfaRequired` uses a fixed message and keeps the sentence on
 `challenge.detail`; do not surface it as the message.
 
+A 403 that carries no JSON object body becomes `ForbiddenError` (an `APIError`,
+deliberately *not* an `AuthenticationError`) — checked after the `mfa_required`
+and `security_code_required` branches, which always have bodies, and before the
+generic 401/403 auth branch. The API explains app-level refusals in the body, so
+a bodiless 403 is an edge/WAF rejection with a still-valid token; classifying it
+as auth made callers discard a good session and burn a TOTP code. Keep 401
+unconditionally `AuthenticationError` — only 403 is ambiguous.
+
 `errors.py` defines the exception tree rooted at `TruthSocialError`.
 `__init__.py` re-exports the entire public surface with an explicit `__all__` —
 add new public names there.
